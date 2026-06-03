@@ -67,6 +67,9 @@ When the user asks for real product photos, Amazon original images, 商品图, �
 
 - Prefer Amazon image enrichment before report generation instead of using generated thumbnails.
 - Use `--fetch-amazon-images` so the script performs read-only Amazon marketplace search, downloads `m.media-amazon.com` product images, and writes an enriched CSV.
+- Choose the correct Amazon store with `--amazon-region` from the purchase/account region whenever possible. Examples: US `us`, Japan `jp`, UK `uk`, Germany `de`, France `fr`, Canada `ca`, India `in`, Singapore `sg`, Australia `au`.
+- Supported common regions are `us`, `ca`, `mx`, `br`, `uk`, `ie`, `de`, `fr`, `it`, `es`, `nl`, `be`, `se`, `pl`, `tr`, `ae`, `sa`, `eg`, `za`, `in`, `sg`, `au`, and `jp`. If a needed Amazon store is missing, pass its exact base URL with `--amazon-marketplace`.
+- If no region is given, the script auto-infers from currency where possible: `USD -> amazon.com`, `JPY -> amazon.co.jp`, `AUD -> amazon.com.au`, `GBP -> amazon.co.uk`. `EUR` is ambiguous and defaults to Germany, so pass an explicit European country code.
 - Pass `--amazon-enriched-csv` and `--amazon-image-dir` to keep the derived file and downloaded photos traceable.
 - Preserve the enriched columns: `Product Image URL`, `Amazon ASIN`, `Amazon Image Source Page`, `Amazon Image Match Title`, `Amazon Image Match Score`.
 - If the user specifically asks for Amazon images, do not substitute other retailers' photos. Low score matches can be included only with a clear caveat or left for manual review.
@@ -76,6 +79,7 @@ Example with Amazon AU original product photos:
 ```bash
 python3 scripts/organize_orders.py /path/to/orders.csv \
   --fetch-amazon-images \
+  --amazon-region au \
   --amazon-enriched-csv /path/to/orders_with_amazon_photos.csv \
   --amazon-image-dir /path/to/amazon_photos_amazon \
   --json ~/Desktop/amazon-purchase-analysis.json \

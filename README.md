@@ -64,6 +64,7 @@ English: Header names do not need to match exactly. The script recognizes common
 ```bash
 python3 scripts/organize_orders.py /path/to/orders.csv \
   --fetch-amazon-images \
+  --amazon-region au \
   --amazon-enriched-csv /path/to/orders_with_amazon_photos.csv \
   --amazon-image-dir /path/to/amazon_photos_amazon \
   --html /path/to/amazon-purchase-report.html \
@@ -76,6 +77,7 @@ English: If the CSV has no image field but the report should use Amazon product 
 ```bash
 python3 scripts/organize_orders.py /path/to/orders.csv \
   --fetch-amazon-images \
+  --amazon-region us \
   --amazon-enriched-csv /path/to/orders_with_amazon_photos.csv \
   --amazon-image-dir /path/to/amazon_photos_amazon \
   --html /path/to/amazon-purchase-report.html \
@@ -86,6 +88,10 @@ python3 scripts/organize_orders.py /path/to/orders.csv \
 中文：增强 CSV 会新增 `Product Image URL`、`Amazon ASIN`、`Amazon Image Source Page`、`Amazon Image Match Title`、`Amazon Image Match Score`。低匹配分数的图片要人工核对；如果用户明确要求 Amazon 原图，不要混用其他零售商图片。
 
 English: The enriched CSV adds `Product Image URL`, `Amazon ASIN`, `Amazon Image Source Page`, `Amazon Image Match Title`, and `Amazon Image Match Score`. Low match scores need manual review; when the user asks for Amazon originals, do not mix in non-Amazon retailer images.
+
+中文：`--amazon-region` 支持常见全球站点：`us`、`ca`、`mx`、`br`、`uk`、`ie`、`de`、`fr`、`it`、`es`、`nl`、`be`、`se`、`pl`、`tr`、`ae`、`sa`、`eg`、`za`、`in`、`sg`、`au`、`jp`。不传时会按货币自动推断，例如 `USD -> amazon.com`、`JPY -> amazon.co.jp`、`AUD -> amazon.com.au`；`EUR` 会默认到 `amazon.de`，欧洲订单最好显式传国家码。也可以用 `--amazon-marketplace https://www.amazon.co.jp` 直接覆盖。
+
+English: `--amazon-region` supports common global stores: `us`, `ca`, `mx`, `br`, `uk`, `ie`, `de`, `fr`, `it`, `es`, `nl`, `be`, `se`, `pl`, `tr`, `ae`, `sa`, `eg`, `za`, `in`, `sg`, `au`, and `jp`. If omitted, the script infers from currency, for example `USD -> amazon.com`, `JPY -> amazon.co.jp`, and `AUD -> amazon.com.au`; `EUR` defaults to `amazon.de`, so European orders should pass the exact country code. Use `--amazon-marketplace https://www.amazon.co.jp` for an explicit URL override.
 
 ## Quick Start / 快速开始
 

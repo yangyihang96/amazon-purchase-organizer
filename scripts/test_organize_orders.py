@@ -256,6 +256,91 @@ class OrganizeOrdersTests(unittest.TestCase):
             self.assertEqual(analysis["orders"][0]["product_image_source"], "provided")
             self.assertEqual(analysis["orders"][0]["product_image_path"], rows[0]["Product Image URL"])
 
+    def test_amazon_region_mapping_uses_local_marketplaces(self):
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("us", "AUD"), "https://www.amazon.com")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("usa", "AUD"), "https://www.amazon.com")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("jp", "AUD"), "https://www.amazon.co.jp")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("japan", "AUD"), "https://www.amazon.co.jp")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("uk", "AUD"), "https://www.amazon.co.uk")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("united kingdom", "AUD"), "https://www.amazon.co.uk")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("de", "AUD"), "https://www.amazon.de")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("amazon.fr", "AUD"), "https://www.amazon.fr")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("amazon.com.be", "AUD"), "https://www.amazon.com.be")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("auto", "USD"), "https://www.amazon.com")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("auto", "JPY"), "https://www.amazon.co.jp")
+        self.assertEqual(organize_orders.resolve_amazon_marketplace("auto", "AUD"), "https://www.amazon.com.au")
+
+    def test_global_amazon_marketplace_mapping_covers_supported_regions(self):
+        expected = {
+            "ae": "https://www.amazon.ae",
+            "au": "https://www.amazon.com.au",
+            "be": "https://www.amazon.com.be",
+            "br": "https://www.amazon.com.br",
+            "ca": "https://www.amazon.ca",
+            "de": "https://www.amazon.de",
+            "eg": "https://www.amazon.eg",
+            "es": "https://www.amazon.es",
+            "fr": "https://www.amazon.fr",
+            "ie": "https://www.amazon.ie",
+            "in": "https://www.amazon.in",
+            "it": "https://www.amazon.it",
+            "jp": "https://www.amazon.co.jp",
+            "mx": "https://www.amazon.com.mx",
+            "nl": "https://www.amazon.nl",
+            "pl": "https://www.amazon.pl",
+            "sa": "https://www.amazon.sa",
+            "se": "https://www.amazon.se",
+            "sg": "https://www.amazon.sg",
+            "tr": "https://www.amazon.com.tr",
+            "uk": "https://www.amazon.co.uk",
+            "us": "https://www.amazon.com",
+            "za": "https://www.amazon.co.za",
+        }
+
+        for region, marketplace in expected.items():
+            with self.subTest(region=region):
+                self.assertEqual(organize_orders.resolve_amazon_marketplace(region, "AUD"), marketplace)
+
+    def test_prepare_input_paths_uses_requested_amazon_region(self):
+        csv_path = self.write_csv(
+            "Order Date,Order ID,Title,Quantity,Item Total\n"
+            "2026-05-19,555-5555555-5555555,Notebook,1,$15.00\n"
+        )
+        calls = []
+        original = organize_orders.enrich_csv_with_amazon_images
+
+        def fake_enrich(input_path, output_path, image_dir, marketplace, min_match_score):
+            calls.append((input_path, output_path, image_dir, marketplace, min_match_score))
+            return output_path
+
+        organize_orders.enrich_csv_with_amazon_images = fake_enrich
+        try:
+            args = organize_orders.parse_args([
+                csv_path,
+                "--fetch-amazon-images",
+                "--amazon-region",
+                "jp",
+                "--amazon-enriched-csv",
+                os.path.join(tempfile.gettempdir(), "jp-orders.csv"),
+            ])
+            prepared = organize_orders.prepare_input_paths(args)
+        finally:
+            organize_orders.enrich_csv_with_amazon_images = original
+
+        self.assertEqual(prepared, [os.path.join(tempfile.gettempdir(), "jp-orders.csv")])
+        self.assertEqual(calls[0][3], "https://www.amazon.co.jp")
+
+    def test_explicit_amazon_marketplace_overrides_region(self):
+        args = organize_orders.parse_args([
+            "orders.csv",
+            "--amazon-region",
+            "jp",
+            "--amazon-marketplace",
+            "https://www.amazon.com",
+        ])
+
+        self.assertEqual(organize_orders.selected_amazon_marketplace(args), "https://www.amazon.com")
+
     def test_report_headers_follow_requested_language(self):
         csv_path = self.write_csv(
             "Order Date,Order ID,Title,Quantity,Item Total,Shipping Savings\n"

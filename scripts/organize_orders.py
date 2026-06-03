@@ -151,6 +151,92 @@ CATEGORY_LABELS = {
 DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"]
 
 AMAZON_AU_BASE_URL = "https://www.amazon.com.au"
+AMAZON_MARKETPLACES = {
+    "ae": "https://www.amazon.ae",
+    "au": AMAZON_AU_BASE_URL,
+    "be": "https://www.amazon.com.be",
+    "br": "https://www.amazon.com.br",
+    "ca": "https://www.amazon.ca",
+    "de": "https://www.amazon.de",
+    "eg": "https://www.amazon.eg",
+    "es": "https://www.amazon.es",
+    "fr": "https://www.amazon.fr",
+    "ie": "https://www.amazon.ie",
+    "in": "https://www.amazon.in",
+    "it": "https://www.amazon.it",
+    "jp": "https://www.amazon.co.jp",
+    "mx": "https://www.amazon.com.mx",
+    "nl": "https://www.amazon.nl",
+    "pl": "https://www.amazon.pl",
+    "sa": "https://www.amazon.sa",
+    "se": "https://www.amazon.se",
+    "sg": "https://www.amazon.sg",
+    "tr": "https://www.amazon.com.tr",
+    "uk": "https://www.amazon.co.uk",
+    "us": "https://www.amazon.com",
+    "za": "https://www.amazon.co.za",
+}
+AMAZON_REGION_ALIASES = {
+    "uae": "ae",
+    "united-arab-emirates": "ae",
+    "australia": "au",
+    "belgium": "be",
+    "brazil": "br",
+    "canada": "ca",
+    "germany": "de",
+    "deutschland": "de",
+    "egypt": "eg",
+    "spain": "es",
+    "france": "fr",
+    "ireland": "ie",
+    "india": "in",
+    "italy": "it",
+    "japan": "jp",
+    "nihon": "jp",
+    "nippon": "jp",
+    "日本": "jp",
+    "mexico": "mx",
+    "netherlands": "nl",
+    "holland": "nl",
+    "poland": "pl",
+    "saudi-arabia": "sa",
+    "ksa": "sa",
+    "sweden": "se",
+    "singapore": "sg",
+    "turkey": "tr",
+    "turkiye": "tr",
+    "türkiye": "tr",
+    "gb": "uk",
+    "great-britain": "uk",
+    "united-kingdom": "uk",
+    "britain": "uk",
+    "england": "uk",
+    "usa": "us",
+    "united-states": "us",
+    "united-states-of-america": "us",
+    "america": "us",
+    "south-africa": "za",
+}
+AMAZON_DOMAIN_ALIASES = {url.replace("https://www.", ""): region for region, url in AMAZON_MARKETPLACES.items()}
+AMAZON_CURRENCY_DEFAULT_REGIONS = {
+    "AED": "ae",
+    "AUD": "au",
+    "BRL": "br",
+    "CAD": "ca",
+    "EGP": "eg",
+    "EUR": "de",
+    "GBP": "uk",
+    "INR": "in",
+    "JPY": "jp",
+    "MXN": "mx",
+    "PLN": "pl",
+    "SAR": "sa",
+    "SEK": "se",
+    "SGD": "sg",
+    "TRY": "tr",
+    "USD": "us",
+    "ZAR": "za",
+}
 AMAZON_IMAGE_COLUMNS = [
     "Product Image URL",
     "Amazon ASIN",
@@ -554,6 +640,31 @@ def fetch_binary_url(url: str, headers: dict | None = None) -> bytes:
     request = Request(url, headers=headers or AMAZON_SEARCH_HEADERS)
     with urlopen(request, timeout=30) as response:
         return response.read()
+
+
+def normalize_amazon_region(value: str | None) -> str:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return "auto"
+    if raw.startswith("https://") or raw.startswith("http://"):
+        return raw.rstrip("/")
+    raw = raw.replace("_", "-").replace(".", "-")
+    raw = re.sub(r"\s+", "-", raw)
+    domain_key = raw.replace("www-", "").replace("-", ".")
+    if domain_key in AMAZON_DOMAIN_ALIASES:
+        return AMAZON_DOMAIN_ALIASES[domain_key]
+    if raw.startswith("amazon-"):
+        raw = raw.removeprefix("amazon-")
+    return AMAZON_REGION_ALIASES.get(raw, raw)
+
+
+def resolve_amazon_marketplace(region: str | None = "auto", currency: str = "AUD") -> str:
+    normalized = normalize_amazon_region(region)
+    if normalized.startswith("https://") or normalized.startswith("http://"):
+        return normalized.rstrip("/")
+    if normalized == "auto":
+        normalized = AMAZON_CURRENCY_DEFAULT_REGIONS.get((currency or "").strip().upper(), "au")
+    return AMAZON_MARKETPLACES.get(normalized, AMAZON_AU_BASE_URL)
 
 
 def amazon_search_url(title: str, marketplace: str = AMAZON_AU_BASE_URL) -> str:
@@ -1439,6 +1550,7 @@ def prepare_input_paths(args: argparse.Namespace) -> list[str]:
     if args.amazon_enriched_csv and len(args.inputs) > 1:
         raise ValueError("--amazon-enriched-csv can only be used with one input CSV")
 
+    marketplace = selected_amazon_marketplace(args)
     enriched_paths = []
     for input_path in args.inputs:
         output_path = enriched_csv_path(input_path, args.amazon_enriched_csv if len(args.inputs) == 1 else "")
@@ -1448,11 +1560,17 @@ def prepare_input_paths(args: argparse.Namespace) -> list[str]:
                 input_path,
                 output_path,
                 image_dir,
-                args.amazon_marketplace,
+                marketplace,
                 args.amazon_image_min_score,
             )
         )
     return enriched_paths
+
+
+def selected_amazon_marketplace(args: argparse.Namespace) -> str:
+    if getattr(args, "amazon_marketplace", ""):
+        return resolve_amazon_marketplace(args.amazon_marketplace, args.currency)
+    return resolve_amazon_marketplace(getattr(args, "amazon_region", "auto"), args.currency)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1475,7 +1593,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--fetch-amazon-images", action="store_true", help="Read-only search Amazon for product photos, write an enriched CSV, and use those photos in the report.")
     parser.add_argument("--amazon-enriched-csv", default="", help="Output enriched CSV path when --fetch-amazon-images is used with one input.")
     parser.add_argument("--amazon-image-dir", default="", help="Directory for downloaded Amazon product photos. Defaults to amazon_photos_amazon beside each input CSV.")
-    parser.add_argument("--amazon-marketplace", default=AMAZON_AU_BASE_URL, help="Amazon marketplace base URL for read-only image search.")
+    parser.add_argument("--amazon-region", default="auto", help="Amazon marketplace region for image search, e.g. au, us, jp, uk, de, fr, ca, in, sg. Auto infers from currency when possible.")
+    parser.add_argument("--amazon-marketplace", default="", help="Advanced override: exact Amazon marketplace base URL for read-only image search.")
     parser.add_argument("--amazon-image-min-score", type=float, default=0.30, help="Minimum title-match score required before an Amazon search result image is used.")
     return parser.parse_args(argv)
 
