@@ -63,6 +63,35 @@ The script accepts one or more CSV files. It maps common Amazon-style headers in
 
 It infers categories and preserves visible order status, but does not grade orders. If an order row has a product image URL/path/data URI, show it in Amount Top and order details. If no image is available, generate a local product-style thumbnail so the visual report still has product imagery.
 
+When the user asks for real product photos, Amazon original images, 商品图, 真实照片, 原图, or similar:
+
+- Prefer Amazon image enrichment before report generation instead of using generated thumbnails.
+- Use `--fetch-amazon-images` so the script performs read-only Amazon marketplace search, downloads `m.media-amazon.com` product images, and writes an enriched CSV.
+- Pass `--amazon-enriched-csv` and `--amazon-image-dir` to keep the derived file and downloaded photos traceable.
+- Preserve the enriched columns: `Product Image URL`, `Amazon ASIN`, `Amazon Image Source Page`, `Amazon Image Match Title`, `Amazon Image Match Score`.
+- If the user specifically asks for Amazon images, do not substitute other retailers' photos. Low score matches can be included only with a clear caveat or left for manual review.
+
+Example with Amazon AU original product photos:
+
+```bash
+python3 scripts/organize_orders.py /path/to/orders.csv \
+  --fetch-amazon-images \
+  --amazon-enriched-csv /path/to/orders_with_amazon_photos.csv \
+  --amazon-image-dir /path/to/amazon_photos_amazon \
+  --json ~/Desktop/amazon-purchase-analysis.json \
+  --html ~/Desktop/amazon-purchase-report.html \
+  --png ~/Desktop/amazon-purchase-report.png \
+  --image-prompt ~/Desktop/amazon-purchase-image-prompt.txt \
+  --currency AUD \
+  --year 2026 \
+  --language zh \
+  --prime-plan auto \
+  --prime-cost 79 \
+  --prime-annual-cost 79 \
+  --prime-monthly-cost 9.99 \
+  --non-member-shipping-per-order 9.99
+```
+
 Prime value logic:
 
 - Compare the Prime membership cost against the hypothetical shipping total the user would have paid without membership for the same purchased orders.
@@ -111,6 +140,7 @@ In the conversation, give a short conclusion-first summary:
 
 - Total recognized spend and record count.
 - Prime value conclusion and shipping-data caveat.
+- Whether product photos came from provided files, Amazon original image enrichment, or generated thumbnails. Mention any low-confidence Amazon image matches that need manual review.
 - The first 2-3 useful follow-up checks, especially missing shipping-savings evidence.
 - The local HTML report path and, if generated, the PNG report path.
 

@@ -12,6 +12,8 @@ English: A read-only Amazon purchase organizer skill. It turns user-provided Ama
 - English: Sorts monthly spend, orders, and items from newest to oldest.
 - 中文：展示金额 Top 商品，并支持商品图片 URL、本地图片路径或自动生成缩略图。
 - English: Shows Amount Top items with product image URLs, local image paths, or generated thumbnails.
+- 中文：可选只读搜索 Amazon AU，为缺少图片字段的订单补充 Amazon 商品原图，并写出可追溯的增强 CSV。
+- English: Optionally performs read-only Amazon AU search to add Amazon product photos for rows without image fields, writing a traceable enriched CSV.
 - 中文：用假设“没有 Prime 会支付的运费总和”对比会员费，判断是否值回。
 - English: Compares Prime membership cost against hypothetical non-member shipping for the same orders.
 - 中文：自动识别年付/月付 Prime 会员记录；月付时显示改成年付会省或多花多少。
@@ -21,9 +23,9 @@ English: A read-only Amazon purchase organizer skill. It turns user-provided Ama
 
 ## Safety / 安全边界
 
-中文：本项目只处理用户主动提供的订单文件。不要提交真实订单 CSV、发票、截图、地址、支付信息或生成出的私人报告到公开仓库。登录 Amazon、MFA、付款、退货、取消订单、改地址、改账户安全设置都必须人工完成。
+中文：本项目只处理用户主动提供的订单文件。可选 Amazon 商品图补全只做公开搜索页/图片 CDN 的只读读取。不要提交真实订单 CSV、发票、截图、地址、支付信息或生成出的私人报告到公开仓库。登录 Amazon、MFA、付款、退货、取消订单、改地址、改账户安全设置都必须人工完成。
 
-English: This project only processes order files that the user provides. Do not commit real order CSVs, invoices, screenshots, addresses, payment details, or private generated reports to a public repository. Amazon login, MFA, payment, returns, cancellations, address changes, and account security changes must remain manual.
+English: This project only processes order files that the user provides. Optional Amazon product-photo enrichment only reads public search pages/image CDN URLs. Do not commit real order CSVs, invoices, screenshots, addresses, payment details, or private generated reports to a public repository. Amazon login, MFA, payment, returns, cancellations, address changes, and account security changes must remain manual.
 
 ## Install / 安装
 
@@ -54,6 +56,36 @@ Order Date,Order ID,Title,Quantity,Amount,Currency,Shipping Paid,Shipping Saving
 中文：字段名可以不完全一样，脚本会识别常见 Amazon 风格表头，例如 `order date`、`item total`、`shipping savings`、`without prime shipping`、`product image url`。
 
 English: Header names do not need to match exactly. The script recognizes common Amazon-style headers such as `order date`, `item total`, `shipping savings`, `without prime shipping`, and `product image url`.
+
+## Amazon Product Photos / Amazon 商品原图
+
+中文：如果订单 CSV 没有图片字段，但用户想在报告里放 Amazon 原图，可以启用只读图片补全：
+
+```bash
+python3 scripts/organize_orders.py /path/to/orders.csv \
+  --fetch-amazon-images \
+  --amazon-enriched-csv /path/to/orders_with_amazon_photos.csv \
+  --amazon-image-dir /path/to/amazon_photos_amazon \
+  --html /path/to/amazon-purchase-report.html \
+  --png /path/to/amazon-purchase-report.png \
+  --language zh
+```
+
+English: If the CSV has no image field but the report should use Amazon product photos, enable read-only photo enrichment:
+
+```bash
+python3 scripts/organize_orders.py /path/to/orders.csv \
+  --fetch-amazon-images \
+  --amazon-enriched-csv /path/to/orders_with_amazon_photos.csv \
+  --amazon-image-dir /path/to/amazon_photos_amazon \
+  --html /path/to/amazon-purchase-report.html \
+  --png /path/to/amazon-purchase-report.png \
+  --language en
+```
+
+中文：增强 CSV 会新增 `Product Image URL`、`Amazon ASIN`、`Amazon Image Source Page`、`Amazon Image Match Title`、`Amazon Image Match Score`。低匹配分数的图片要人工核对；如果用户明确要求 Amazon 原图，不要混用其他零售商图片。
+
+English: The enriched CSV adds `Product Image URL`, `Amazon ASIN`, `Amazon Image Source Page`, `Amazon Image Match Title`, and `Amazon Image Match Score`. Low match scores need manual review; when the user asks for Amazon originals, do not mix in non-Amazon retailer images.
 
 ## Quick Start / 快速开始
 

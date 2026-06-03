@@ -15,6 +15,8 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote_plus, urljoin
+from urllib.request import Request, urlopen
 
 import build_report
 import build_image_report
@@ -147,6 +149,44 @@ CATEGORY_LABELS = {
 }
 
 DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"]
+
+AMAZON_AU_BASE_URL = "https://www.amazon.com.au"
+AMAZON_IMAGE_COLUMNS = [
+    "Product Image URL",
+    "Amazon ASIN",
+    "Amazon Image Source Page",
+    "Amazon Image Match Title",
+    "Amazon Image Match Score",
+]
+AMAZON_SEARCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36",
+    "Accept-Language": "en-AU,en;q=0.9",
+}
+AMAZON_IMAGE_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "for",
+    "with",
+    "of",
+    "to",
+    "in",
+    "on",
+    "by",
+    "from",
+    "made",
+    "pack",
+    "packs",
+    "count",
+    "fit",
+    "inch",
+    "inches",
+    "kg",
+    "mg",
+    "gram",
+    "grams",
+}
 
 LABELS = {
     "zh": {
@@ -502,6 +542,187 @@ def thumbnail_shape(category_key: str) -> str:
 def keyword_matches(text: str, keyword: str) -> bool:
     escaped = re.escape(keyword.lower()).replace(r"\ ", r"\s+")
     return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", text) is not None
+
+
+def fetch_text_url(url: str, headers: dict | None = None) -> str:
+    request = Request(url, headers=headers or AMAZON_SEARCH_HEADERS)
+    with urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8", "ignore")
+
+
+def fetch_binary_url(url: str, headers: dict | None = None) -> bytes:
+    request = Request(url, headers=headers or AMAZON_SEARCH_HEADERS)
+    with urlopen(request, timeout=30) as response:
+        return response.read()
+
+
+def amazon_search_url(title: str, marketplace: str = AMAZON_AU_BASE_URL) -> str:
+    return f"{marketplace.rstrip('/')}/s?k={quote_plus(title or '')}"
+
+
+def amazon_product_url(asin: str, marketplace: str = AMAZON_AU_BASE_URL) -> str:
+    return f"{marketplace.rstrip('/')}/dp/{asin}"
+
+
+def extract_html_attr(tag: str, attr: str) -> str:
+    match = re.search(rf"""{attr}\s*=\s*["']([^"']*)["']""", tag, re.IGNORECASE)
+    return html_module.unescape(match.group(1)) if match else ""
+
+
+def amazon_image_candidates_from_html(html: str, marketplace: str = AMAZON_AU_BASE_URL) -> list[dict]:
+    candidates = []
+    for match in re.finditer(r"""<div[^>]+data-asin=["']([A-Z0-9]{10})["'][\s\S]*?(?=<div[^>]+data-asin=|</body>)""", html or "", re.IGNORECASE):
+        asin = match.group(1)
+        block = match.group(0)
+        image_tag = ""
+        for image_match in re.finditer(r"<img\b[^>]*>", block, re.IGNORECASE):
+            tag = image_match.group(0)
+            classes = extract_html_attr(tag, "class")
+            if "s-image" in classes:
+                image_tag = tag
+                break
+        if not image_tag:
+            continue
+        image_url = extract_html_attr(image_tag, "src") or extract_html_attr(image_tag, "data-src")
+        if not image_url:
+            continue
+        link = ""
+        link_match = re.search(r"""href=["']([^"']*/dp/""" + re.escape(asin) + r"""[^"']*)["']""", block, re.IGNORECASE)
+        if link_match:
+            link = urljoin(marketplace, html_module.unescape(link_match.group(1)))
+        candidates.append(
+            {
+                "asin": asin,
+                "title": extract_html_attr(image_tag, "alt"),
+                "image_url": image_url,
+                "source_page": amazon_product_url(asin, marketplace),
+                "result_url": link or amazon_product_url(asin, marketplace),
+            }
+        )
+    return candidates
+
+
+def amazon_match_tokens(value: str) -> list[str]:
+    tokens = re.findall(r"[a-z0-9]+", (value or "").lower())
+    return [token for token in tokens if len(token) > 1 and token not in AMAZON_IMAGE_STOPWORDS]
+
+
+def amazon_title_match_score(query_title: str, result_title: str) -> float:
+    query_tokens = amazon_match_tokens(query_title)
+    result_tokens = set(amazon_match_tokens(result_title))
+    if not query_tokens or not result_tokens:
+        return 0.0
+    matches = sum(1 for token in query_tokens if token in result_tokens)
+    return matches / len(query_tokens)
+
+
+def find_amazon_image_match(
+    title: str,
+    marketplace: str = AMAZON_AU_BASE_URL,
+    fetch_text=fetch_text_url,
+) -> dict | None:
+    page = fetch_text(amazon_search_url(title, marketplace), AMAZON_SEARCH_HEADERS)
+    if "captcha" in page.lower() and "enter the characters" in page.lower():
+        return None
+    candidates = amazon_image_candidates_from_html(page, marketplace)
+    for candidate in candidates:
+        candidate["match_score"] = amazon_title_match_score(title, candidate.get("title", ""))
+    candidates.sort(key=lambda candidate: candidate.get("match_score", 0), reverse=True)
+    return candidates[0] if candidates else None
+
+
+def amazon_full_size_image_url(image_url: str) -> str:
+    return re.sub(r"\._[^.]+_\.(jpg|jpeg|png|webp)$", r".\1", image_url or "", flags=re.IGNORECASE)
+
+
+def safe_image_filename(title: str, index: int, extension: str) -> str:
+    words = re.findall(r"[a-z0-9]+", (title or "").lower())[:7]
+    slug = "-".join(words) or "amazon-product"
+    return f"{index:02d}-{slug}{extension}"
+
+
+def image_extension_from_url(url: str) -> str:
+    extension = os.path.splitext((url or "").split("?", 1)[0])[1].lower()
+    if extension in {".jpg", ".jpeg", ".png", ".webp"}:
+        return extension
+    return ".jpg"
+
+
+def row_has_image(row: dict) -> bool:
+    normalized = normalize_row(row)
+    return bool(pick(normalized, "image"))
+
+
+def download_amazon_image(match: dict, image_dir: str, title: str, index: int, fetch_binary=fetch_binary_url) -> str:
+    os.makedirs(image_dir, exist_ok=True)
+    raw_image_url = match.get("image_url", "")
+    image_url = amazon_full_size_image_url(raw_image_url) or raw_image_url
+    output_path = os.path.abspath(os.path.join(image_dir, safe_image_filename(title, index, image_extension_from_url(image_url))))
+    try:
+        data = fetch_binary(image_url, AMAZON_SEARCH_HEADERS)
+    except Exception:
+        if image_url == raw_image_url:
+            raise
+        image_url = raw_image_url
+        data = fetch_binary(image_url, AMAZON_SEARCH_HEADERS)
+    if not data:
+        raise ValueError(f"Amazon image download returned no data for {match.get('asin', '')}")
+    with open(output_path, "wb") as handle:
+        handle.write(data)
+    return output_path
+
+
+def enrich_csv_with_amazon_images(
+    input_path: str,
+    output_path: str,
+    image_dir: str,
+    marketplace: str = AMAZON_AU_BASE_URL,
+    min_match_score: float = 0.30,
+    fetch_text=fetch_text_url,
+    fetch_binary=fetch_binary_url,
+) -> str:
+    with open(input_path, "r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+        fieldnames = list(reader.fieldnames or [])
+
+    for column in AMAZON_IMAGE_COLUMNS:
+        if column not in fieldnames:
+            fieldnames.append(column)
+
+    cache: dict[str, dict | None] = {}
+    for index, row in enumerate(rows, start=1):
+        title = row.get("Title") or pick(normalize_row(row), "title")
+        if not title or row_has_image(row):
+            continue
+        if title not in cache:
+            try:
+                cache[title] = find_amazon_image_match(title, marketplace, fetch_text)
+            except Exception as exc:
+                cache[title] = None
+                row["Amazon Image Match Title"] = f"Amazon image search failed: {exc}"
+        match = cache[title]
+        if not match:
+            continue
+        score = float(match.get("match_score", 0))
+        row["Amazon ASIN"] = match.get("asin", "")
+        row["Amazon Image Source Page"] = match.get("source_page", "")
+        row["Amazon Image Match Title"] = match.get("title", "")
+        row["Amazon Image Match Score"] = f"{score:.2f}"
+        if score < min_match_score:
+            continue
+        try:
+            row["Product Image URL"] = download_amazon_image(match, image_dir, title, index, fetch_binary)
+        except Exception as exc:
+            row["Product Image URL"] = ""
+            row["Amazon Image Match Title"] = f"{row['Amazon Image Match Title']} [image download failed: {exc}]"
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return output_path
 
 
 def read_csv(path: str, default_currency: str = "AUD", language: str = "zh") -> list[dict]:
@@ -1198,6 +1419,42 @@ def write_text(text: str, path: str) -> str:
     return path
 
 
+def enriched_csv_path(input_path: str, explicit_output: str = "") -> str:
+    if explicit_output:
+        return os.path.abspath(os.path.expanduser(explicit_output))
+    directory = os.path.dirname(os.path.abspath(input_path))
+    stem, extension = os.path.splitext(os.path.basename(input_path))
+    return os.path.join(directory, f"{stem}_with_amazon_photos{extension or '.csv'}")
+
+
+def enriched_image_dir(input_path: str, explicit_dir: str = "") -> str:
+    if explicit_dir:
+        return os.path.abspath(os.path.expanduser(explicit_dir))
+    return os.path.join(os.path.dirname(os.path.abspath(input_path)), "amazon_photos_amazon")
+
+
+def prepare_input_paths(args: argparse.Namespace) -> list[str]:
+    if not args.fetch_amazon_images:
+        return args.inputs
+    if args.amazon_enriched_csv and len(args.inputs) > 1:
+        raise ValueError("--amazon-enriched-csv can only be used with one input CSV")
+
+    enriched_paths = []
+    for input_path in args.inputs:
+        output_path = enriched_csv_path(input_path, args.amazon_enriched_csv if len(args.inputs) == 1 else "")
+        image_dir = enriched_image_dir(input_path, args.amazon_image_dir)
+        enriched_paths.append(
+            enrich_csv_with_amazon_images(
+                input_path,
+                output_path,
+                image_dir,
+                args.amazon_marketplace,
+                args.amazon_image_min_score,
+            )
+        )
+    return enriched_paths
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Organize Amazon order CSV exports into an interactive report.")
     parser.add_argument("inputs", nargs="+", help="CSV files exported from Amazon order/report pages.")
@@ -1215,13 +1472,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--prime-paid-months", default="", help="Paid months to use when --prime-plan monthly is set without detected membership charge rows.")
     parser.add_argument("--language", default="auto", choices=["auto", "zh", "en"], help="Report label language. Use the user's operating/conversation language when known.")
     parser.add_argument("--non-member-shipping-per-order", default="", help="Optional assumed non-member shipping cost per eligible paid order, used when no explicit without-Prime shipping field exists.")
+    parser.add_argument("--fetch-amazon-images", action="store_true", help="Read-only search Amazon for product photos, write an enriched CSV, and use those photos in the report.")
+    parser.add_argument("--amazon-enriched-csv", default="", help="Output enriched CSV path when --fetch-amazon-images is used with one input.")
+    parser.add_argument("--amazon-image-dir", default="", help="Directory for downloaded Amazon product photos. Defaults to amazon_photos_amazon beside each input CSV.")
+    parser.add_argument("--amazon-marketplace", default=AMAZON_AU_BASE_URL, help="Amazon marketplace base URL for read-only image search.")
+    parser.add_argument("--amazon-image-min-score", type=float, default=0.30, help="Minimum title-match score required before an Amazon search result image is used.")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(list(sys.argv[1:] if argv is None else argv))
+    input_paths = prepare_input_paths(args)
     analysis = build_analysis(
-        args.inputs,
+        input_paths,
         args.currency,
         args.year,
         args.prime_cost,

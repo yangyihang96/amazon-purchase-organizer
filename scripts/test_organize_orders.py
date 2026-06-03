@@ -201,6 +201,61 @@ class OrganizeOrdersTests(unittest.TestCase):
         self.assertIn("商品图片", top[1]["product_image_alt"])
         self.assertIn("product photos or generated thumbnails", analysis["image_prompt"])
 
+    def test_amazon_image_enrichment_writes_source_columns_and_local_photo(self):
+        csv_path = self.write_csv(
+            "Order Date,Order ID,Title,Quantity,Item Total\n"
+            "2026-05-19,555-5555555-5555555,LEGO Art Hokusai Great Wave,1,$155.20\n"
+        )
+        search_html = """
+        <html><body>
+          <div data-asin="B0BBRY1XKD">
+            <a class="a-link-normal s-line-clamp-4" href="/LEGO-Hokusai-Great-Wave/dp/B0BBRY1XKD/ref=sr_1_1"></a>
+            <img class="s-image"
+              src="https://m.media-amazon.com/images/I/81vTAvokydL._AC_UL320_.jpg"
+              alt="LEGO Art Hokusai - The Great Wave Building Set for Adults" />
+          </div>
+        </body></html>
+        """
+
+        requested = []
+
+        def fake_fetch_text(url, headers=None):
+            requested.append(url)
+            return search_html
+
+        def fake_fetch_binary(url, headers=None):
+            return b"\xff\xd8amazon-photo"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            enriched_csv = os.path.join(tmp, "orders-with-photos.csv")
+            image_dir = os.path.join(tmp, "amazon-photos")
+
+            result = organize_orders.enrich_csv_with_amazon_images(
+                csv_path,
+                enriched_csv,
+                image_dir,
+                fetch_text=fake_fetch_text,
+                fetch_binary=fake_fetch_binary,
+            )
+
+            self.assertEqual(result, enriched_csv)
+            self.assertTrue(requested[0].startswith("https://www.amazon.com.au/s?k="))
+            with open(enriched_csv, "r", encoding="utf-8", newline="") as handle:
+                rows = list(__import__("csv").DictReader(handle))
+            self.assertEqual(rows[0]["Amazon ASIN"], "B0BBRY1XKD")
+            self.assertEqual(rows[0]["Amazon Image Source Page"], "https://www.amazon.com.au/dp/B0BBRY1XKD")
+            self.assertEqual(rows[0]["Amazon Image Match Title"], "LEGO Art Hokusai - The Great Wave Building Set for Adults")
+            self.assertEqual(rows[0]["Amazon Image Match Score"], "1.00")
+            self.assertTrue(rows[0]["Product Image URL"].endswith(".jpg"))
+            self.assertTrue(os.path.exists(rows[0]["Product Image URL"]))
+            with open(rows[0]["Product Image URL"], "rb") as photo:
+                self.assertEqual(photo.read(), b"\xff\xd8amazon-photo")
+
+            analysis = organize_orders.build_analysis([enriched_csv], report_year=2026)
+
+            self.assertEqual(analysis["orders"][0]["product_image_source"], "provided")
+            self.assertEqual(analysis["orders"][0]["product_image_path"], rows[0]["Product Image URL"])
+
     def test_report_headers_follow_requested_language(self):
         csv_path = self.write_csv(
             "Order Date,Order ID,Title,Quantity,Item Total,Shipping Savings\n"
