@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+venv/
+env/
+
+# Generated reports
+examples/output/
+outputs/
+*.tmp
+
+# Private Amazon data. Keep real exports and reports out of public repos.
+*order*.csv
+*orders*.csv
+*amazon_account_test*
+*invoice*.pdf
+*receipt*.pdf
+*purchase-report*.html
+*purchase-report*.png
+*purchase-analysis*.json
+*image-prompt*.txt
+
+# Keep the synthetic sample tracked.
+!examples/sample_orders.csv
+!examples/README.md

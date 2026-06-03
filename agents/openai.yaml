@@ -1,0 +1,6 @@
+interface:
+  display_name: "Amazon Purchase Organizer"
+  short_description: "Amazon order image report with Prime value"
+  default_prompt: "Use $amazon-purchase-organizer to organize my Amazon purchase history into a PNG image report with shipping and Prime value analysis."
+policy:
+  allow_implicit_invocation: true
