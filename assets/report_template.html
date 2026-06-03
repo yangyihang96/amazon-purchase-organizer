@@ -90,6 +90,36 @@ body{margin:0;background:radial-gradient(circle at 50% 0,#fff 0,#f6f9fc 48%,var(
   .prime-result{border-left:0;padding-left:0}
   .month-row{grid-template-columns:70px 1fr}.month-amount,.month-count{text-align:left}
 }
+@media (max-width:560px){
+  .page{padding:8px}
+  .report-frame{gap:12px;padding:12px}
+  .metrics{gap:10px}
+  .metric-card{grid-template-columns:56px 1fr;gap:12px;padding:14px}
+  .metric-icon{width:54px;height:54px;border-radius:14px}
+  .metric-icon svg{width:36px;height:36px}
+  .metric-label{font-size:16px;white-space:normal}
+  .metric-value{font-size:24px;overflow-wrap:anywhere}
+  .metric-date_range{grid-template-columns:56px 1fr}
+  .metric-date_range .metric-icon{width:54px;height:54px}
+  .metric-date_range .metric-icon svg{width:36px;height:36px}
+  .metric-date_range .metric-value{font-size:18px;white-space:normal;overflow-wrap:anywhere}
+  .prime-panel{padding:14px;gap:12px;align-items:stretch}
+  .prime-shield-wrap{width:104px;height:94px;justify-self:center}
+  .prime-shield{width:76px;height:88px}
+  .prime-sparkle.one{left:6px;bottom:18px;font-size:20px}
+  .prime-sparkle.two{right:8px;top:2px;font-size:18px}
+  .prime-title{font-size:24px;margin-bottom:12px;text-align:center}
+  .prime-metrics{grid-template-columns:1fr;gap:0;border-left:0}
+  .prime-metric{display:grid;grid-template-columns:minmax(96px,42%) minmax(0,1fr);gap:10px;align-items:start;padding:9px 0;border-right:0;border-bottom:1px solid rgba(8,117,47,.18)}
+  .prime-metric:last-child{border-bottom:0}
+  .prime-k,.prime-v{white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+  .prime-k{font-size:14px;line-height:1.25;margin-bottom:0}
+  .prime-v{font-size:18px;line-height:1.25}
+  .prime-note{font-size:15px;line-height:1.45;margin-top:12px;overflow-wrap:anywhere}
+  .prime-result-title{font-size:18px;margin-bottom:10px}
+  .prime-badge{height:auto;min-height:62px;padding:10px 12px;gap:8px;flex-wrap:wrap;text-align:center;font-size:20px;line-height:1.2}
+  .prime-emoji{font-size:32px}
+}
 </style>
 </head>
 <body>
